@@ -46,6 +46,7 @@ struct DotOpConverter : public OpRewritePattern<LhloOpTy> {
     const auto& shape = lhs_type.getShape();
     SmallVector<Value, 4> induction_vars;
     SmallVector<Value, 4> small_args;
+    SmallVector<Value, 4> induction_vars1; 
     const auto loc = op.getLoc();
     for (int i = 0; i < shape.size(); ++i) {
       auto forOp = rewriter.create<AffineForOp>(loc, 0, shape[i]);
@@ -53,29 +54,29 @@ struct DotOpConverter : public OpRewritePattern<LhloOpTy> {
       if(i==0){
 	small_args.push_back(forOp.getInductionVar());
       }
+      if(i==shape.size()-1){
+        induction_vars1.push_back(forOp.getInductionVar());
+      }
       rewriter.setInsertionPointToStart(forOp.getBody());
     }
-    SmallVector<Value, 4> induction_vars1;
     const auto& shape1 = rhs_type.getShape();
-    for (int i = 0; i < shape1.size(); ++i) {
+    for (int i = 1; i < shape1.size(); ++i) {
       auto forOp = rewriter.create<AffineForOp>(loc, 0, shape1[i]);
+      small_args.push_back(forOp.getInductionVar());
       induction_vars1.push_back(forOp.getInductionVar());
-      if(i!=0){
-        small_args.push_back(forOp.getInductionVar());
-      }
       rewriter.setInsertionPointToStart(forOp.getBody());
     }
     auto l = rewriter.create<LoadOp>(loc, lhs, induction_vars);
     auto r = rewriter.create<LoadOp>(loc, rhs, induction_vars1);
     auto result = rewriter.create<LoadOp>(loc, op.output(), small_args);
   
-    Value opResult1 = xla_lhlo::XlaOpToStdScalarOp::map<LhloOpTy>(
+    Value op_result = xla_lhlo::XlaOpToStdScalarOp::map<LhloOpTy>(
         op, element_type, {l, r, result}, &rewriter);
 
-    if (opResult1 == nullptr) {
+    if (op_result == nullptr) {
       return failure();
     }
-    rewriter.create<StoreOp>(loc, opResult1, op.output(), small_args);
+    rewriter.create<StoreOp>(loc, op_result, op.output(), small_args);
     rewriter.eraseOp(op);
     return success();
   }
