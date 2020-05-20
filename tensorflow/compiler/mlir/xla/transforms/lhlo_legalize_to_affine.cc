@@ -66,9 +66,9 @@ struct DotOpConverter : public OpRewritePattern<LhloOpTy> {
       induction_vars1.push_back(forOp.getInductionVar());
       rewriter.setInsertionPointToStart(forOp.getBody());
     }
-    auto l = rewriter.create<LoadOp>(loc, lhs, induction_vars);
-    auto r = rewriter.create<LoadOp>(loc, rhs, induction_vars1);
-    auto result = rewriter.create<LoadOp>(loc, op.output(), small_args);
+    auto l = rewriter.create<AffineLoadOp>(loc, lhs, induction_vars);
+    auto r = rewriter.create<AffineLoadOp>(loc, rhs, induction_vars1);
+    auto result = rewriter.create<AffineLoadOp>(loc, op.output(), small_args);
   
     Value op_result = xla_lhlo::XlaOpToStdScalarOp::map<LhloOpTy>(
         op, element_type, {l, r, result}, &rewriter);
@@ -76,7 +76,7 @@ struct DotOpConverter : public OpRewritePattern<LhloOpTy> {
     if (op_result == nullptr) {
       return failure();
     }
-    rewriter.create<StoreOp>(loc, op_result, op.output(), small_args);
+    rewriter.create<AffineStoreOp>(loc, op_result, op.output(), small_args);
     rewriter.eraseOp(op);
     return success();
   }
@@ -105,14 +105,14 @@ struct BinaryOpConverter : public OpRewritePattern<LhloOpTy> {
       induction_vars.push_back(forOp.getInductionVar());
       rewriter.setInsertionPointToStart(forOp.getBody());
     }
-    auto l = rewriter.create<LoadOp>(loc, lhs, induction_vars);
-    auto r = rewriter.create<LoadOp>(loc, rhs, induction_vars);
+    auto l = rewriter.create<AffineLoadOp>(loc, lhs, induction_vars);
+    auto r = rewriter.create<AffineLoadOp>(loc, rhs, induction_vars);
     Value opResult = xla_lhlo::XlaOpToStdScalarOp::map<LhloOpTy>(
         op, element_type, {l, r}, &rewriter);
     if (opResult == nullptr) {
       return failure();
     }
-    rewriter.create<StoreOp>(loc, opResult, op.out(), induction_vars);
+    rewriter.create<AffineStoreOp>(loc, opResult, op.out(), induction_vars);
     rewriter.eraseOp(op);
     return success();
   }
