@@ -54,7 +54,6 @@ struct DotOpConverter : public OpRewritePattern<LhloOpTy> {
 	small_args.push_back(forOp.getInductionVar());
       }
       rewriter.setInsertionPointToStart(forOp.getBody());
-      op.emitOpError()<<i;
     }
     SmallVector<Value, 4> induction_vars1;
     const auto& shape1 = rhs_type.getShape();
@@ -82,7 +81,7 @@ struct DotOpConverter : public OpRewritePattern<LhloOpTy> {
   }
 };
 
-template <typename LhloOpTy>  
+template <typename LhloOpTy> 
 struct BinaryOpConverter : public OpRewritePattern<LhloOpTy> {
   using OpRewritePattern<LhloOpTy>::OpRewritePattern;
 
@@ -94,6 +93,9 @@ struct BinaryOpConverter : public OpRewritePattern<LhloOpTy> {
     const auto& rhs_type = rhs.getType().template cast<MemRefType>();
     const auto& element_type = lhs_type.getElementType();
 
+    if (lhs_type.getShape() != rhs_type.getShape()) {
+      return failure();
+    }
     const auto& shape = lhs_type.getShape();
     SmallVector<Value, 4> induction_vars;
     const auto loc = op.getLoc();
@@ -102,12 +104,10 @@ struct BinaryOpConverter : public OpRewritePattern<LhloOpTy> {
       induction_vars.push_back(forOp.getInductionVar());
       rewriter.setInsertionPointToStart(forOp.getBody());
     }
-
     auto l = rewriter.create<LoadOp>(loc, lhs, induction_vars);
     auto r = rewriter.create<LoadOp>(loc, rhs, induction_vars);
     Value opResult = xla_lhlo::XlaOpToStdScalarOp::map<LhloOpTy>(
         op, element_type, {l, r}, &rewriter);
-
     if (opResult == nullptr) {
       return failure();
     }
@@ -116,7 +116,6 @@ struct BinaryOpConverter : public OpRewritePattern<LhloOpTy> {
     return success();
   }
 };
-
 
 void populateLHLOToAffineConversionPattern(MLIRContext* context,
                                            OwningRewritePatternList* patterns) {

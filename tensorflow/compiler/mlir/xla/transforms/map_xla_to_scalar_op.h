@@ -139,6 +139,28 @@ inline Value MapLhloOpToStdScalarOp<xla_lhlo::AbsOp>(
   return nullptr;
 }
 
+
+template <>
+inline Value MapLhloOpToStdScalarOp<xla_lhlo::DotOp>(Location loc, ArrayRef<Type> result_types,
+                                    ArrayRef<Value> args, OpBuilder* b) {
+  const auto& lhs = args[0];
+  const auto& rhs = args[1];                                      
+  const auto& result = args[2];
+  Type element_type = lhs.getType();   
+  if (element_type.isa<FloatType>()) {   
+    Value value1 = MapLhloOpToStdScalarOpImpl<FloatType, ::mlir::MulFOp>{}(
+        loc, result_types, {lhs, rhs}, b);
+    return MapLhloOpToStdScalarOpImpl<FloatType, ::mlir::AddFOp>{}(
+        loc, result_types, {value1, result}, b);
+  }
+  else{	  
+    Value value1 = MapLhloOpToStdScalarOpImpl<IntegerType, ::mlir::MulIOp>{}(
+      loc, result_types, {lhs, rhs}, b);    
+    return MapLhloOpToStdScalarOpImpl<IntegerType, ::mlir::AddIOp>{}(
+      loc, result_types, {value1, result}, b);
+  }
+}
+
 template <>
 inline Value MapLhloOpToStdScalarOp<xla_lhlo::AndOp>(
     Location loc, ArrayRef<Type> result_types, ArrayRef<Value> args,
