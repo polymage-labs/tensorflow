@@ -31,6 +31,73 @@ namespace mlir {
 namespace xla_lhlo {
 namespace {
 
+template<typename LhloOpTy>
+struct DotOpConverter : public OpRewritePattern<LhloOpTy>{
+  using OpRewritePattern<LhloOpTy>::OpRewritePattern;
+
+// Only Rank 2 tensors
+
+  LogicalResult matchAndRewrite(LhloOpTy op,
+                                PatternRewriter& rewriter) const override {
+
+      const auto& lhs = op.lhs();
+      const auto& rhs = op.lhs();
+      const auto& lhs_type = lhs.getType().template cast<MemRefType>();
+      const auto& rhs_type = rhs.getType().template cast<MemRefType>();
+      const auto& element_type = lhs_type.getElementType();
+
+      const auto& shape_lhs = lhs_type.getShape();
+      const auto& shape_rhs = rhs_type.getShape();
+
+      if (shape_lhs[shape_lhs.size()-1] != shape_rhs[shape_rhs.size()-1]) {
+          return failure();
+      }
+
+      SmallVector<Value, 4>induction_vars;
+      SmallVector<Value, 4>induction_vars1;
+      SmallVector<Value, 4>small_args;
+
+      const auto loc = op.getLoc();
+
+      for(int i = 0; i < shape_lhs.size(); ++i)
+      {
+        auto forOp = rewriter.create<AffineForOp>(loc, 0, shape_lhs[i]);
+        induction_vars.push_back(forOp.getInductionVar());
+        if(i == 0){
+          small_args.push_back(forOp.getInductionVar());
+        }
+        if(i == shape_lhs.size()-1){
+          induction_vars1.push_back(forOp.getInductionVar());
+        }
+        rewriter.setInsertionPointToStart(forOp.getBody());
+      }
+
+    for (int i = 1; i < shape_rhs.size(); ++i) {
+      auto forOp = rewriter.create<AffineForOp>(loc, 0, shape_rhs[i]);
+      small_args.push_back(forOp.getInductionVar());
+      induction_vars1.push_back(forOp.getInductionVar());
+      rewriter.setInsertionPointToStart(forOp.getBody());
+    }
+
+
+    auto l = rewriter.create<AffineLoadOp>(loc, lhs, induction_vars);
+    auto r = rewriter.create<AffineLoadOp>(loc, rhs, induction_vars1);
+    auto result = rewriter.create<AffineLoadOp>(loc, op.output(), small_args);
+
+
+    Value op_result = xla_lhlo::XlaOpToStdScalarOp::map<LhloOpTy>(
+        op, element_type, {l, r, result}, &rewriter);
+
+    if (op_result == nullptr) {
+      return failure();
+    }
+    rewriter.create<AffineStoreOp>(loc, op_result, op.output(), small_args);
+    rewriter.eraseOp(op);
+    return success();
+
+    }
+};
+
 template <typename LhloOpTy>
 struct BinaryOpConverter : public OpRewritePattern<LhloOpTy> {
   using OpRewritePattern<LhloOpTy>::OpRewritePattern;
@@ -42,6 +109,8 @@ struct BinaryOpConverter : public OpRewritePattern<LhloOpTy> {
     const auto& lhs_type = lhs.getType().template cast<MemRefType>();
     const auto& rhs_type = rhs.getType().template cast<MemRefType>();
     const auto& element_type = lhs_type.getElementType();
+
+    
 
     if (lhs_type.getShape() != rhs_type.getShape()) {
       return failure();
@@ -71,6 +140,7 @@ void populateLHLOToAffineConversionPattern(MLIRContext* context,
                                            OwningRewritePatternList* patterns) {
   // clang-format off
   patterns->insert<
+      DotOpConverter<xla_lhlo::DotOp>,
       BinaryOpConverter<xla_lhlo::AddOp>,
       BinaryOpConverter<xla_lhlo::AndOp>,
       BinaryOpConverter<xla_lhlo::DivOp>,
